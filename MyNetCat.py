@@ -22,13 +22,14 @@ class NetCat:
             self.listen() #for listener
         else:
             self.send() # for client
+
     def send(self):
-        self.socket.connect((self.args.target, self.args.port))
-        if self.buffer
+        self.socket.connect((self.args.target, self.args.port)) # establishes connection to target and port
+        if self.buffer #if buffer sends it first to target
             self.socket.send(self.buffer)
         
-        try:
-            while True:
+        try: #try catch allows Ctrl-C out of programe execution
+            while True: #loop for data receiving, breaks if there is no data anymore
                 recv_len = 1
                 response = ''
                 while recv_len:
@@ -37,15 +38,61 @@ class NetCat:
                     response += data.decode()
                     if recv_len < 4096:
                         break
-                    if response:
+                    if response: #if there is a response, there is output
                         print(response)
                         buffer = input('> ')
                         buffer += '\n'
-                        self.socket.send(buffer.encode())
-        except KeyboardInterrupt:
+                        self.socket.send(buffer.encode())#sends interactive response, loop continues
+        except KeyboardInterrupt: #ctrl-c exit
             print('Interrupted by user')
             self.socket.close()
             sys.exit()
+    
+    def listen(self):
+        self.socket.bind((self.args.target, self.args.port)) #sets connection to target and port
+        self.socket.listen(5)
+        while True: #loop that initiates listening
+            client_socket, _ = self.socket.accept()
+            client_thread = threading.Thread(
+                    target=self.handle, args=(client_socket,) #sends connected socket to handle
+            )
+            client_thread.start()
+    
+    def handle(self, client_socket): # executes arg that program was set to
+
+        if self.args.execute: #block for command execution
+            output = execute(self.args.execute)
+            client_socket.send(output.encode())
+
+        elif self.args.upload: #block for uploading
+            file_buffer = b''
+            while True:
+                data = client_socket.recv(4096)
+                if data:
+                    file_buffer += data
+                else:
+                    break
+
+            with open(self.args.upload, 'wb') as f:
+                f.write(file_buffer)
+            message = f'Saved file {self.args.upload}'
+            client_socket.sed(message.encode())
+
+        elif self.args.command: #block for shell creation
+            cmd_buffer = b''
+            while True:
+                try:
+                    client_socket.send(b'BHP: #> ')
+                    while '\n' not in cmd_buffer.decode():
+                        cmd_buffer += client_socket.recv(64)
+                    response = execute(cmd_buffer.decode())
+                    if response:
+                        client_socket.send(response.encode())
+                    cmd_buffer = b''
+                except Exception as e:
+                    print(f'server closed {e}')
+                    self.socket.close()
+                    sys.exit()
 
 #execute function that recieves commands
 def execute(cmd):
